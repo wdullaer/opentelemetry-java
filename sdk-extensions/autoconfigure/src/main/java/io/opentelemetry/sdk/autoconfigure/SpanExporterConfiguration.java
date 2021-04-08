@@ -100,6 +100,39 @@ final class SpanExporterConfiguration {
       builder.setTrustedCertificates(certificateBytes);
     }
 
+    String clientCertificate = config.getString("otel.exporter.otlp.clientcertificate");
+    String clientKey = config.getString("otel.exporter.otlp.clientcertificatekey");
+    if ((clientCertificate == null && clientKey != null)
+        || (clientCertificate != null && clientKey == null)) {
+      throw new ConfigurationException(
+          "OTLP clientcertificate and clientcertificatekey must be specified together.");
+    }
+    if (clientCertificate != null) {
+      Path certificatePath = Paths.get(clientCertificate);
+      if (!Files.exists(certificatePath)) {
+        throw new ConfigurationException(
+            "Invalid OTLP client certificate path: " + certificatePath);
+      }
+      Path keyPath = Paths.get(clientKey);
+      if (!Files.exists(keyPath)) {
+        throw new ConfigurationException("Invalid OTLP client certificate key path: " + keyPath);
+      }
+
+      final byte[] certificateBytes;
+      final byte[] keyBytes;
+      try {
+        certificateBytes = Files.readAllBytes(certificatePath);
+      } catch (IOException e) {
+        throw new ConfigurationException("Error reading OTLP client certificate.", e);
+      }
+      try {
+        keyBytes = Files.readAllBytes(keyPath);
+      } catch (IOException e) {
+        throw new ConfigurationException("Error reading OTLP client certificate key.", e);
+      }
+      builder.setClientCertificate(certificateBytes, keyBytes);
+    }
+
     return builder.build();
   }
 

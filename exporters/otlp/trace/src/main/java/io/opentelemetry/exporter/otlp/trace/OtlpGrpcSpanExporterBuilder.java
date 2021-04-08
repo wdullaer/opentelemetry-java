@@ -34,7 +34,9 @@ public final class OtlpGrpcSpanExporterBuilder {
   private long timeoutNanos = TimeUnit.SECONDS.toNanos(DEFAULT_TIMEOUT_SECS);
   private URI endpoint = DEFAULT_ENDPOINT;
   @Nullable private Metadata metadata;
-  @Nullable private byte[] trustedCertificatesPem;
+  @Nullable private ByteArrayInputStream trustedCertificatesPem;
+  @Nullable private ByteArrayInputStream clientCertificatePem;
+  @Nullable private ByteArrayInputStream clientCertificateKeyPem;
 
   /**
    * Sets the managed chanel to use when communicating with the backend. Takes precedence over
@@ -98,7 +100,20 @@ public final class OtlpGrpcSpanExporterBuilder {
    * use the system default trusted certificates.
    */
   public OtlpGrpcSpanExporterBuilder setTrustedCertificates(byte[] trustedCertificatesPem) {
-    this.trustedCertificatesPem = trustedCertificatesPem;
+    requireNonNull(trustedCertificatesPem, "trustedCertificatesPem");
+
+    this.trustedCertificatesPem = new ByteArrayInputStream(trustedCertificatesPem);
+    return this;
+  }
+
+  /** Sets a client certificate to use for authentication when connecting to the server. */
+  public OtlpGrpcSpanExporterBuilder setClientCertificate(
+      byte[] clientCertificatePem, byte[] clientCertificateKeyPem) {
+    requireNonNull(clientCertificatePem, "clientCertificatePem");
+    requireNonNull(clientCertificateKeyPem, "clientCertificateKeyPem");
+
+    this.clientCertificatePem = new ByteArrayInputStream(clientCertificatePem);
+    this.clientCertificateKeyPem = new ByteArrayInputStream(clientCertificateKeyPem);
     return this;
   }
 
@@ -138,7 +153,7 @@ public final class OtlpGrpcSpanExporterBuilder {
         managedChannelBuilder.intercept(MetadataUtils.newAttachHeadersInterceptor(metadata));
       }
 
-      if (trustedCertificatesPem != null) {
+      if (trustedCertificatesPem != null || clientCertificatePem != null) {
         // gRPC does not abstract TLS configuration so we need to check the implementation and act
         // accordingly.
         if (managedChannelBuilder
@@ -148,8 +163,10 @@ public final class OtlpGrpcSpanExporterBuilder {
           NettyChannelBuilder nettyBuilder = (NettyChannelBuilder) managedChannelBuilder;
           try {
             nettyBuilder.sslContext(
+                // SslContext handles null values for trustManager and keyManager gracefully
                 GrpcSslContexts.forClient()
-                    .trustManager(new ByteArrayInputStream(trustedCertificatesPem))
+                    .trustManager(trustedCertificatesPem)
+                    .keyManager(clientCertificatePem, clientCertificateKeyPem)
                     .build());
           } catch (IllegalArgumentException | SSLException e) {
             throw new IllegalStateException(
@@ -165,8 +182,10 @@ public final class OtlpGrpcSpanExporterBuilder {
               (io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder) managedChannelBuilder;
           try {
             nettyBuilder.sslContext(
+                // SslContext handles null values for trustManager and keyManager gracefully
                 io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts.forClient()
-                    .trustManager(new ByteArrayInputStream(trustedCertificatesPem))
+                    .trustManager(trustedCertificatesPem)
+                    .keyManager(clientCertificatePem, clientCertificateKeyPem)
                     .build());
           } catch (IllegalArgumentException | SSLException e) {
             throw new IllegalStateException(
